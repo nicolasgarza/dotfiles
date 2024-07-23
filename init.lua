@@ -359,6 +359,11 @@ require("lazy").setup({
 			end, { bang = true, nargs = '?', complete = "dir" })
 		end
 	},
+	{
+		'windwp/nvim-autopairs',
+		event = "InsertEnter",
+		config = true,
+	},
 	-- LSP
 	{
 		'neovim/nvim-lspconfig',
@@ -419,6 +424,7 @@ require("lazy").setup({
 							unusedparams = true,
 						},
 						staticcheck = true,
+						gofumpt = true,
 					},
 				},
 			}
@@ -449,6 +455,11 @@ require("lazy").setup({
 					'configure.ac',
 					'.git'
 				),
+				on_attach = function(client, bufnr)
+					-- Make signature help window invisible
+					vim.lsp.handlers["textDocument/signatureHelp"] = function(_, result, ctx, config)
+				end
+			end,
 			}
 
 			-- Global mappings.
@@ -541,6 +552,9 @@ require("lazy").setup({
 				experimental = {
 					ghost_text = true,
 				},
+				view = {
+					entries = "native" -- Use native view
+				},
 			})
 
 			-- Enable completing paths in :
@@ -559,7 +573,10 @@ require("lazy").setup({
 		config = function(_, opts)
 			-- Get signatures (and _only_ signatures) when in argument lists.
 			require "lsp_signature".setup({
-				doc_lines = 0,
+				floating_window = false,
+				hint_enable = true, 
+				hint_prefix = "🦧 ",
+				doc_lines = 0, 
 				handler_opts = {
 					border = "none"
 				},
@@ -626,6 +643,12 @@ require("lazy").setup({
 		config = function()
 			vim.g.go_fmt_autosave = 1
 			vim.g.go_fmt_command = "goimports"
+		vim.api.nvim_create_autocmd("BufWritePre", {
+			pattern = "*.go",
+			callback = function()
+			  vim.lsp.buf.format()
+			end,
+		  })
 		end
 	},
 	-- Python
