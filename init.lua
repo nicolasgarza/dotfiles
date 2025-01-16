@@ -219,11 +219,18 @@ vim.api.nvim_create_autocmd('Filetype', {
 	group = text,
 	command = 'setlocal spell tw=80 colorcolumn=81',
 })
+--- no red highlight on tab
+vim.cmd("highlight! link goSpaceError NONE")
 -- TODO: no autocomplete in text
 -- copy to system clipboard
 vim.opt.clipboard:append("unnamedplus")
--- disable autocomment on newline when current line is a comment
-vim.opt.formatoptions:remove({ 'c', 'r', 'o' })
+-- Enforce formatoptions globally after everything else
+vim.api.nvim_create_autocmd('BufEnter', {
+    pattern = '*',
+    callback = function()
+        vim.opt.formatoptions:remove({ 'c', 'r', 'o' })
+    end,
+})
 -------------------------------------------------------------------------------
 --
 -- plugin configuration
@@ -242,30 +249,31 @@ if not vim.loop.fs_stat(lazypath) then
 		lazypath,
 	})
 end
+
+if vim.fn.has('nvim-0.5') == 1 then
+  vim.lsp.set_log_level("debug")
+end
 vim.opt.rtp:prepend(lazypath)
 -- then, setup!
 require("lazy").setup({
 	-- main color scheme
+	
 	{
-		"wincent/base16-nvim",
-		lazy = false, -- load at start
-		priority = 1000, -- load first
+		"scottmckendry/cyberdream.nvim",
+		lazy = false,
+		priority = 1000,
 		config = function()
-			vim.cmd([[colorscheme base16-gruvbox-dark-hard]])
-			vim.o.background = 'dark'
-			-- XXX: hi Normal ctermbg=NONE
-			-- Make comments more prominent -- they are important.
-			local bools = vim.api.nvim_get_hl(0, { name = 'Boolean' })
-			vim.api.nvim_set_hl(0, 'Comment', bools)
-			-- Make it clearly visible which argument we're at.
-			local marked = vim.api.nvim_get_hl(0, { name = 'PMenu' })
-			vim.api.nvim_set_hl(0, 'LspSignatureActiveParameter', { fg = marked.fg, bg = marked.bg, ctermfg = marked.ctermfg, ctermbg = marked.ctermbg, bold = true })
-			-- XXX
-			-- Would be nice to customize the highlighting of warnings and the like to make
-			-- them less glaring. But alas
-			-- https://github.com/nvim-lua/lsp_extensions.nvim/issues/21
-			-- call Base16hi("CocHintSign", g:base16_gui03, "", g:base16_cterm03, "", "", "")
-		end
+			require("cyberdream").setup({
+				transparent = false,
+				italic_comments = true,
+				theme = {
+					highlights = {
+						Comment = { fg = "#ff8000", bg = "NONE", italic = true }, -- Neon/Bright Orange
+					},
+				},
+			})
+			vim.cmd("colorscheme cyberdream")
+		end,
 	},
 	-- nice bar at the bottom
 	{
@@ -393,6 +401,43 @@ require("lazy").setup({
 				},
 			}
 
+			-- Java LSP
+			local jdtls_path = "/opt/homebrew/bin/jdtls"  -- Path to jdtls
+			local home = os.getenv("HOME")
+			local workspace_root = home .. "/workspace/java/"  -- Base workspace directory
+
+			-- Function to determine the root directory of the project
+			local root_dir = lspconfig.util.root_pattern(
+				"gradlew",
+				"mvnw",
+				"pom.xml",
+				"build.gradle",
+				".git"
+			)
+
+			-- Configure jdtls
+			lspconfig.jdtls.setup{
+				cmd = {
+					jdtls_path,
+					"-data", workspace_root .. vim.fn.fnamemodify(vim.fn.getcwd(), ":p:h:t"),
+				},
+				root_dir = root_dir,
+				settings = {
+					java = {
+						eclipse = {
+							downloadSources = true,
+						},
+						maven = {
+							downloadSources = true,
+						},
+					},
+				},
+				on_attach = function(client, bufnr)
+					-- Basic on_attach can remain empty or include your general keybindings
+					-- Example: require('your_lsp_keybindings').setup(client, bufnr)
+				end,
+			}
+
 			-- Bash LSP
 			local configs = require 'lspconfig.configs'
 			if not configs.bash_lsp and vim.fn.executable('bash-language-server') == 1 then
@@ -445,7 +490,7 @@ require("lazy").setup({
 			-- C LSP setup (clangd)
 			lspconfig.clangd.setup {
 				cmd = {"clangd", "--background-index"},
-				filetypes = {"c", "cpp", "objc", "objcpp"},
+				filetypes = {"c", "cc", "cpp", "objc", "objcpp"},
 				root_dir = lspconfig.util.root_pattern(
 					'.clangd',
 					'.clang-tidy',
@@ -460,6 +505,22 @@ require("lazy").setup({
 					vim.lsp.handlers["textDocument/signatureHelp"] = function(_, result, ctx, config)
 				end
 			end,
+			}
+
+			-- Java LSP (jdtls)
+			lspconfig.jdtls.setup {
+			  cmd = { 'jdtls' },  
+			  root_dir = lspconfig.util.root_pattern(".git", "pom.xml", "build.gradle", ".project"),
+			  settings = {
+				java = {
+				  format = {
+					enabled = true,
+					settings = {
+					  profile = "GoogleStyle", 
+					},
+				  },
+				},
+			  },
 			}
 
 			-- Global mappings.
@@ -506,9 +567,6 @@ require("lazy").setup({
 					--     vim.lsp.inlay_hint(ev.buf, true)
 					-- end
 
-					-- None of this semantics tokens business.
-					-- https://www.reddit.com/r/neovim/comments/143efmd/is_it_possible_to_disable_treesitter_completely/
-					client.server_capabilities.semanticTokensProvider = nil
 				end,
 			})
 		end
@@ -564,6 +622,29 @@ require("lazy").setup({
 				})
 			})
 		end
+	},
+	-- treesitter
+	
+	{
+		'nvim-treesitter/nvim-treesitter',
+		run = ':TSUpdate',
+		config = function()
+			require('nvim-treesitter.configs').setup({
+				ensure_installed = {
+					"bash", "c", "cpp", "go", "javascript", "json", "lua",
+					"python", "rust", "yaml", "markdown"
+				},
+				incremental_selection = {
+					enable = true,
+					keymaps = {
+						init_selection = "gnn",
+						node_incremental = "grn",
+						scope_incremental = "grc",
+						node_decremental = "grm",
+					},
+				},
+			})
+		end,
 	},
 	-- inline function signatures
 	{
@@ -656,7 +737,7 @@ require("lazy").setup({
 		'vim-python/python-syntax',
 		ft = { "python" },
 		config = function()
-			vim.g.python_highlight_all = 1
+			---vim.g.python_highlight_all = 1
 		end
 	},
 	-- C
@@ -664,6 +745,7 @@ require("lazy").setup({
 		'vim-jp/vim-cpp',
 		ft = { "c", "cpp" },
 	},
+
 })
 
 --[[
